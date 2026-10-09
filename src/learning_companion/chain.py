@@ -3,7 +3,11 @@ from collections.abc import Iterator
 
 from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
+from langchain_core.prompts import (
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    MessagesPlaceholder,
+)
 from langchain_xai import ChatXAI
 
 from .config import get_settings
@@ -15,9 +19,12 @@ SYSTEM_INSTRUCTION = (
     "Explain clearly and concisely, and help the learner understand."
 )
 
+MAX_HISTORY_MESSAGES = 10
+
 PROMPT = ChatPromptTemplate.from_messages(
     [
         SystemMessage(content=SYSTEM_INSTRUCTION),
+        MessagesPlaceholder("history"),
         HumanMessagePromptTemplate.from_template("{question}"),
     ]
 )
@@ -27,13 +34,11 @@ class ConfigurationError(Exception):
     pass
 
 
-def build_messages(question: str) -> list[BaseMessage]:
-    messages = PROMPT.format_messages(question=question)
+def build_messages(question: str, history: list[BaseMessage]) -> list[BaseMessage]:
+    messages = PROMPT.format_messages(question=question, history=history)
     if get_settings().app_env == "development":
         roles = ", ".join(m.type for m in messages)
         logger.info("prompt roles=[%s] count=%d", roles, len(messages))
-        for m in messages:
-            logger.info("payload %s: %s", m.type, m.content)
     return messages
 
 
@@ -51,13 +56,13 @@ def _build_chain():
     return PROMPT | llm | StrOutputParser()
 
 
-def answer(question: str) -> str:
+def answer(question: str, history: list[BaseMessage]) -> str:
     chain = _build_chain()
-    build_messages(question)
-    return chain.invoke({"question": question})
+    build_messages(question, history)
+    return chain.invoke({"question": question, "history": history})
 
 
-def stream_answer(question: str) -> Iterator[str]:
+def stream_answer(question: str, history: list[BaseMessage]) -> Iterator[str]:
     chain = _build_chain()
-    build_messages(question)
-    return chain.stream({"question": question})
+    build_messages(question, history)
+    return chain.stream({"question": question, "history": history})

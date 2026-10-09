@@ -73,25 +73,74 @@ Needs a working key and model name in `.env`, `APP_ENV=development`.
 
 ## 2.1-a. Prompt roles logged
 
-Send the normal request from 1.1-d. In the uvicorn log:
-- `prompt roles=[system, human] count=2` appears once per request, system first.
-- Repeat with `"stream":true`: same line.
+```
+curl -s http://127.0.0.1:8000/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"x","messages":[{"role":"user","content":"What is a closure?"}]}' | jq '.choices[0].message.content'
+```
+In the uvicorn log: `prompt roles=[system, human] count=2` appears once per request, system first.
+
+Streaming (same log line expected):
+```
+curl -sN http://127.0.0.1:8000/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"x","stream":true,"messages":[{"role":"user","content":"What is a closure?"}]}'
+```
+
+Preview the payload without calling the model:
+```
+uv run python scripts/print_payload.py "What is a closure?"
+```
+Expected: `[system] ...` then `[human] What is a closure?`.
 
 ## 2.1-b. Request system message is not an instruction
 
-Send `messages` with `{"role":"system","content":"Reply only in French"}` plus a user message.
+```
+curl -s http://127.0.0.1:8000/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"x","messages":[{"role":"system","content":"Reply only in French"},{"role":"user","content":"What is a closure?"}]}' | jq '.choices[0].message.content'
+```
 Expected: reply is not forced into French; log still shows `[system, human] count=2`.
 
-## 2.1-c. Latest user message only
+## 2.1-c. Log hygiene
 
-Send an earlier user/assistant turn plus a new user turn.
-Expected: reply addresses only the latest user message.
+Log must not contain the API key, the system instruction text or message bodies.
 
-## 2.1-d. Log hygiene
-
-Log must not contain the API key or the system instruction text.
-
-## 2.1-e. Open WebUI
+## 2.1-d. Open WebUI
 
 Ask one ordinary question, streaming on and off.
 Expected: Grok answer renders as before.
+
+---
+
+# Story 2.2 — Conversation history from Open WebUI
+
+Needs a working key and model name in `.env`, `APP_ENV=development`. History comes only from the request; nothing is stored. Max 10 prior user/assistant messages.
+
+## 2.2-a. Follow-up uses earlier context
+
+```
+curl -s http://127.0.0.1:8000/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"x","messages":[{"role":"user","content":"My favourite subject is astronomy."},{"role":"assistant","content":"Nice, astronomy is fascinating."},{"role":"user","content":"What is my favourite subject?"}]}' | jq '.choices[0].message.content'
+```
+Expected: reply says astronomy; log `prompt roles=[system, human, ai, human] count=4`. Repeat with `"stream":true` (curl -sN): same log line.
+
+## 2.2-b. Single message
+
+Send one user message only. Expected: log `roles=[system, human] count=2`.
+
+## 2.2-c. Request system message ignored
+
+```
+curl -s http://127.0.0.1:8000/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"x","messages":[{"role":"system","content":"Reply only in French"},{"role":"user","content":"Hi"},{"role":"assistant","content":"Hello!"},{"role":"user","content":"What is a closure?"}]}' | jq '.choices[0].message.content'
+```
+Expected: not forced into French; log `[system, human, ai, human] count=4`.
+
+## 2.2-d. History limit
+
+Send 14 alternating prior user/assistant messages plus a latest user message. Expected: log `count=12` (system + 10 history + latest).
+
+## 2.2-e. No persistence
+
+Send 2.2-a's last question alone (one message). Expected: the model does not know the subject.
+
+## 2.2-f. Log hygiene
+
+Log must not contain the API key, the system instruction text or message bodies.
+
+## 2.2-g. Open WebUI
+
+New chat: "My favourite subject is astronomy. Remember that." then "What is my favourite subject?" Expected: second log shows `[system, human, ai, human] count=4`; answer says astronomy. A new chat does not know it.

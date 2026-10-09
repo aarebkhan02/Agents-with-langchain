@@ -5,9 +5,10 @@ from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from pydantic import BaseModel
 
-from .chain import ConfigurationError, answer, stream_answer
+from .chain import MAX_HISTORY_MESSAGES, ConfigurationError, answer, stream_answer
 from .config import get_settings
 
 app = FastAPI(title="Learning Companion")
@@ -26,6 +27,19 @@ class ChatRequest(BaseModel):
 
 def _latest_user(messages: list[Message]) -> str:
     return next((m.content for m in reversed(messages) if m.role == "user"), "")
+
+
+def _history(messages: list[Message]) -> list[BaseMessage]:
+    last = next(
+        (i for i in range(len(messages) - 1, -1, -1) if messages[i].role == "user"),
+        0,
+    )
+    prior = [
+        HumanMessage(m.content) if m.role == "user" else AIMessage(m.content)
+        for m in messages[:last]
+        if m.role in ("user", "assistant") and m.content.strip()
+    ]
+    return prior[-MAX_HISTORY_MESSAGES:]
 
 
 def _chunk(cid: str, model: str, delta: dict, finish: str | None = None) -> str:
@@ -55,10 +69,11 @@ def models():
 def chat(req: ChatRequest):
     model = get_settings().generation_model_name or (req.model or "")
     question = _latest_user(req.messages)
+    history = _history(req.messages)
     cid = f"chatcmpl-{uuid.uuid4().hex}"
     try:
         if not req.stream:
-            text = answer(question)
+            text = answer(question, history)
             return {
                 "id": cid,
                 "object": "chat.completion",
@@ -72,7 +87,7 @@ def chat(req: ChatRequest):
                     }
                 ],
             }
-        stream = stream_answer(question)
+        stream = stream_answer(question, history)
         first = next(stream, None)
     except ConfigurationError as e:
         return JSONResponse(

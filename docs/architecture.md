@@ -4,6 +4,8 @@
 
 `Open WebUI → local application's OpenAI-compatible chat endpoint → LangChain prompt and Grok model → answer in Open WebUI`
 
+Message flow: `request → latest user message → [system instruction, user message] → Grok → text`. Request `system`/`assistant` messages are ignored. Deliberate no-persistence boundary: no history, database or memory yet.
+
 ## Components
 
 - **Open WebUI**: already installed and working; the supplied chat client only. Do not reinstall, reconfigure, modify, or build it.

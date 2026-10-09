@@ -6,7 +6,9 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
     generation_api_key: str = ""
-    generation_api_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    generation_api_base_url: str = (
+        "https://generativelanguage.googleapis.com/v1beta/openai/"
+    )
     generation_model_name: str = ""
     host: str = "127.0.0.1"
     port: int = 8000

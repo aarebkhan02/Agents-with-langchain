@@ -144,3 +144,43 @@ Log must not contain the API key, the system instruction text or message bodies.
 ## 2.2-g. Open WebUI
 
 New chat: "My favourite subject is astronomy. Remember that." then "What is my favourite subject?" Expected: second log shows `[system, human, ai, human] count=4`; answer says astronomy. A new chat does not know it.
+
+---
+
+# Story 3.1 — Study-helper chain
+
+Needs a working key and model name in `.env`. Dev command only; not routed until 3.2.
+
+```
+uv run python -m learning_companion.study "What is an API?"
+```
+Expected: payload shows `[system]` then `[human]`; answer is a plain explanation ending with exactly one `Next step:` line.
+
+---
+
+# Story 3.2 — Visible Python routing
+
+Needs a working key and model name in `.env`. Rule: latest user message starting with the `/study` token → study helper; otherwise general chat. Replies start with `[route: general]` or `[route: study]`; log shows `route=general|study`.
+
+## 3.2-a. General route
+
+```
+curl -s http://127.0.0.1:8000/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"x","messages":[{"role":"user","content":"Hello"}]}' | jq '.choices[0].message.content'
+```
+Expected: reply starts `[route: general]`; log `route=general`.
+
+## 3.2-b. Study route
+
+```
+curl -s http://127.0.0.1:8000/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"x","messages":[{"role":"user","content":"/study Explain what an API is"}]}' | jq '.choices[0].message.content'
+```
+Expected: reply starts `[route: study]`, explanation plus one `Next step:` line; log `route=study`. Repeat with `"stream":true` (curl -sN): label in first content chunk, then `data: [DONE]`.
+
+## 3.2-c. Token match and history
+
+- `/studying` → `route=general`.
+- Prior messages plus a latest `/study ...` message: study route; history kept per 2.2 (log `prompt roles=` is emitted only for general).
+
+## 3.2-d. Open WebUI
+
+Same chat: send "Hello", then `/study Explain what an API is`. Expected: both replies through the same endpoint, labels `general` then `study`.

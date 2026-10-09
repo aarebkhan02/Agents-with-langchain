@@ -1,4 +1,5 @@
 import sys
+from collections.abc import Iterator
 
 from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
@@ -51,6 +52,13 @@ def _build_study_chain():
 def study_answer(question: str, history: list[BaseMessage] | None = None) -> str:
     chain = _build_study_chain()
     return chain.invoke({"question": question, "history": history or []})
+
+
+def stream_study_answer(
+    question: str, history: list[BaseMessage] | None = None
+) -> Iterator[str]:
+    chain = _build_study_chain()
+    return chain.stream({"question": question, "history": history or []})
 
 
 def main() -> None:

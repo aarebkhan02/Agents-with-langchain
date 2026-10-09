@@ -8,15 +8,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from pydantic import BaseModel
 
-from .chain import (
-    MAX_HISTORY_MESSAGES,
-    ConfigurationError,
-    answer,
-    logger,
-    stream_answer,
-)
+from .chain import MAX_HISTORY_MESSAGES, ConfigurationError
 from .config import get_settings
-from .study import stream_study_answer, study_answer
+from .graph import run_graph
 
 app = FastAPI(title="Learning Companion")
 
@@ -49,13 +43,6 @@ def _history(messages: list[Message]) -> list[BaseMessage]:
     return prior[-MAX_HISTORY_MESSAGES:]
 
 
-def _route(question: str) -> tuple[str, str]:
-    text = question.lstrip()
-    if text.startswith("/study") and (len(text) == 6 or text[6].isspace()):
-        return "study", text[6:].strip()
-    return "general", question
-
-
 def _chunk(cid: str, model: str, delta: dict, finish: str | None = None) -> str:
     data = {
         "id": cid,
@@ -82,46 +69,34 @@ def models():
 @app.post("/v1/chat/completions")
 def chat(req: ChatRequest):
     model = get_settings().generation_model_name or (req.model or "")
-    route, question = _route(_latest_user(req.messages))
     history = _history(req.messages)
     cid = f"chatcmpl-{uuid.uuid4().hex}"
-    logger.info("route=%s", route)
-    label = f"[route: {route}] "
-    # Session 4 replaces this if/else with an explicit LangGraph route.
-    if route == "study":
-        run, run_stream = study_answer, stream_study_answer
-    else:
-        run, run_stream = answer, stream_answer
     try:
-        if not req.stream:
-            text = label + run(question, history)
-            return {
-                "id": cid,
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": model,
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {"role": "assistant", "content": text},
-                        "finish_reason": "stop",
-                    }
-                ],
-            }
-        stream = run_stream(question, history)
-        first = next(stream, None)
+        route, reply = run_graph(_latest_user(req.messages), history)
     except ConfigurationError as e:
         return JSONResponse(
             status_code=500,
             content={"error": {"message": str(e), "type": "configuration_error"}},
         )
+    text = f"[route: {route}] {reply}"
+    if not req.stream:
+        return {
+            "id": cid,
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": text},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
 
     def events():
         yield _chunk(cid, model, {"role": "assistant"})
-        yield _chunk(cid, model, {"content": label + (first or "")})
-        for piece in stream:
-            if piece:
-                yield _chunk(cid, model, {"content": piece})
+        yield _chunk(cid, model, {"content": text})
         yield _chunk(cid, model, {}, "stop")
         yield "data: [DONE]\n\n"
 

@@ -13,7 +13,12 @@ Message flow: `request → latest user message + last ≤10 prior user/assistant
 - **LangChain chains** (same Grok model, request history and endpoint):
   - **General chat** (`chain.py`): greetings and ordinary conversation; active for all requests.
   - **Study helper** (`study.py`): beginner concept explanation + one next step; selected when the latest user message starts with `/study`.
-- **Routing rule** (`main.py`, `_route`): if the latest user message begins with the `/study` token, strip only that marker and use the study helper; otherwise use general chat. Path: `endpoint → _route → general or study chain → same normal/SSE adapter`. The route is logged (`route=general|study`) and shown as a `[route: …]` prefix in the answer text. Boundary: deterministic application routing, not LLM classification, LangGraph or multi-agent orchestration.
+- **LangGraph workflow** (`graph.py`, replaces the Story 3.2 `if/else`): `START → router → {general | study} → END`. Called from the same endpoint; the final answer goes through the existing normal/SSE adapter (streaming emits the finished answer as content chunks).
+  - State: `user_message` (latest message), `messages` (request history, ≤10), `route` (`general`/`study`), `answer` (final text).
+  - Nodes: **router** (plain Python, not an agent: latest message starts with the `/study` token → `study`, else `general`), **general** (general-chat chain), **study** (study-helper chain; only the `/study` marker is stripped).
+  - Edges: `START→router`; conditional router→general|study; general→END; study→END.
+  - Trace: log `route=<r> nodes=router><r>`; answer prefixed `[route: …]`.
+  - Out of scope: LLM routing, review/improve/loops/retries (Story 4.2), MCP/tools, persistence, extra agents.
 
 ## Scope
 

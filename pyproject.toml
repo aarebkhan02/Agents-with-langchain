@@ -9,6 +9,7 @@ dependencies = [
     "langchain",
     "langchain-xai",
     "uvicorn",
+    "langgraph>=1.2.14",
 ]
 
 [dependency-groups]
